@@ -1,0 +1,22 @@
+name = "heeca-monitor"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = false
+
+# Roda fora do servidor heeca-prod: se o servidor cair, o monitor continua de pé.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Estado (último status por alvo) — só para alertar na transição, não a cada 5 min.
+[[kv_namespaces]]
+binding = "ESTADO"
+id = "7674d8457cf740d5b0825a67ce4cabc2"
+
+[[routes]]
+pattern = "status.heeca.com.br"
+custom_domain = true
+
+# Segredos (wrangler secret put): RESEND_API_KEY
+[vars]
+ALERT_TO = "estevaobrunocesar@gmail.com"
+ALERT_FROM = "Heeca Ops <no-reply@heeca.com.br>"
