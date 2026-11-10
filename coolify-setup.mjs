@@ -238,6 +238,15 @@ const APPS = [
       SESSION_SECRET: secret("KIDS_SESSION_SECRET"), SEED_DEMO: "false", MIGRATE_ON_START: "true",
       // WhatsApp pelo Heeca Notify (a creche nunca fala com a Meta); NOTIFY_SECRET = NOTIFY_SECRET_KIDS do Notify
       NOTIFY_URL: "https://notify.heeca.com.br", NOTIFY_PRODUCT: "kids", NOTIFY_SECRET: secret("NOTIFY_SECRET_KIDS"),
+      // Imagens (logo da escola, álbum, foto da criança): bucket PÚBLICO próprio (R2_KIDS_PUBLIC_*).
+      // Sem as chaves o app fica em "local" e recusa o envio em produção de propósito (503).
+      ...s3PublicEnv("kids"),
+      // Documentos da matrícula (RG, certidão, laudo): bucket PRIVADO próprio (R2_KIDS_DOCS_*), sem
+      // domínio público e com token separado do público — o app serve por rota autenticada
+      // (src/lib/private-storage.ts). Nunca cai em bucket compartilhado: sem as chaves, fica desligado.
+      ...(["BUCKET", "ACCESS_KEY_ID", "SECRET_ACCESS_KEY"].every((k) => external(`R2_KIDS_DOCS_${k}`))
+        ? { DOCS_STORAGE_DRIVER: "s3", DOCS_S3_ENDPOINT: s3Endpoint(), DOCS_S3_REGION: "auto", DOCS_S3_BUCKET: external("R2_KIDS_DOCS_BUCKET"), DOCS_S3_ACCESS_KEY_ID: external("R2_KIDS_DOCS_ACCESS_KEY_ID"), DOCS_S3_SECRET_ACCESS_KEY: external("R2_KIDS_DOCS_SECRET_ACCESS_KEY"), DOCS_S3_PREFIX: "" }
+        : {}),
       // Heeca AI (Fase 3, spec 54.1): STUB enquanto ANTHROPIC_API_KEY não existir em production.env — sem
       // ela a UI mostra "em breve" e nenhuma chamada externa é feita (ver src/server/ai/service.ts).
       ANTHROPIC_API_KEY: external("ANTHROPIC_API_KEY"),
