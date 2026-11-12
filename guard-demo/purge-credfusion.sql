@@ -1,0 +1,11 @@
+BEGIN;
+DELETE FROM "AuditLog" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND (id LIKE 'cdemo%' OR "entityId" LIKE 'cdemo%' OR "employeeId" LIKE 'cdemo%');
+DELETE FROM "WorkSessionAdjustment" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND ("sessionId" LIKE 'cdemo%' OR id LIKE 'cdemo%');
+DELETE FROM "Occurrence" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+DELETE FROM "WorkSession" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+DELETE FROM "EmployeeAssignment" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+DELETE FROM "Employee" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+DELETE FROM "PostShift" WHERE "postId" LIKE 'cdemo%';
+DELETE FROM "Post" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+DELETE FROM "Client" WHERE "tenantId" = 'cmv0n18bg000001mv8gcaodkb' AND id LIKE 'cdemo%';
+COMMIT;

@@ -18,6 +18,7 @@ const ALVOS = [
   { nome: "Mind", url: "https://mind.heeca.com.br/api/health" },
   { nome: "Notify", url: "https://notify.heeca.com.br/api/health" }, // degraded = fila parada
   { nome: "Invoice", url: "https://invoice.heeca.com.br/" },
+  { nome: "Guard", url: "https://guard.heeca.com.br/api/health" },
   // CDNs públicas por produto (bucket R2 próprio de cada um; raiz de bucket vazio responde 404 e está de pé)
   { nome: "CDN Store", url: "https://cdn-store.heeca.com.br/", aceita: [200, 404] },
   { nome: "Coolify", url: "https://coolify.heeca.com.br/api/health", aceita: [200, 401, 404] }, // painel responde; a API exige token

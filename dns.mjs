@@ -53,6 +53,9 @@ const RECORDS = (ip) => [
   { type: "A", name: `make.${ZONE}`, content: ip, proxied: false, comment: "Heeca Make" },
   { type: "A", name: `pet.${ZONE}`, content: ip, proxied: false, comment: "Heeca Pet" },
   { type: "A", name: `service.${ZONE}`, content: ip, proxied: false, comment: "Heeca Service" },
+  { type: "A", name: `guard.${ZONE}`, content: ip, proxied: false, comment: "Heeca Guard" },
+  { type: "A", name: `assist.${ZONE}`, content: ip, proxied: false, comment: "Heeca Assist (web)" },
+  { type: "A", name: `api.assist.${ZONE}`, content: ip, proxied: false, comment: "Heeca Assist (API e webhook do WhatsApp)" },
   // orcamento.heeca.com.br (Heeca Orçamento) NÃO entra aqui: é um Worker da Cloudflare com custom_domain — o "wrangler deploy" cria o registro sozinho.
 ];
 

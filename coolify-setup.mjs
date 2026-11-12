@@ -100,7 +100,12 @@ const DBS = [
   { name: "heeca-cut-db", user: "heeca_cut", db: "heeca_cut" },
   { name: "heeca-pet-db", user: "heeca_pet", db: "heeca_pet" },
   { name: "heeca-service-db", user: "heeca_service", db: "heeca_service" },
+  { name: "heeca-assist-db", user: "heeca_assist", db: "heeca_assist" },
+  { name: "heeca-guard-db", user: "heeca_guard", db: "heeca_guard" },
 ];
+
+/** Provedor do canal compartilhado do Notify: "none" (padrão desde 05/10/2026: número Twilio exclusivo do Assist), "twilio" ou "meta". */
+const NOTIFY_SHARED = external("NOTIFY_SHARED_PROVIDER") || "none";
 
 /** Variáveis por app. `dbUrl` é preenchida com a URL interna do Postgres do Coolify. */
 const APPS = [
@@ -115,6 +120,8 @@ const APPS = [
       BILLING_PROVIDER: external("ASAAS_API_KEY") && external("ASAAS_WEBHOOK_TOKEN") ? "asaas" : "manual",
       ASAAS_ENV, ASAAS_API_KEY: external("ASAAS_API_KEY"), ASAAS_WEBHOOK_TOKEN: external("ASAAS_WEBHOOK_TOKEN"), JOBS_SECRET: secret("PORTAL_JOBS_SECRET"), ...mailEnv("Heeca"),
       JOBS_INPROCESS: "true", JOBS_INTERVAL_MS: "3600000",
+      // WhatsApp do cliente (D11): botão em /conta/whatsapp; o token do negócio fica só no Notify
+      NOTIFY_URL: "https://notify.heeca.com.br", NOTIFY_SECRET_PORTAL: secret("NOTIFY_SECRET_PORTAL"), META_APP_ID: external("META_APP_ID"), META_EMBEDDED_SIGNUP_CONFIG_ID: external("META_EMBEDDED_SIGNUP_CONFIG_ID"),
       // Integração dos produtos (sincronizada no boot do portal; ver src/server/jobs/bootstrap.ts)
       PRODUCT_TICKET_APP_URL: "https://ticket.heeca.com.br", PRODUCT_TICKET_PROVISION_URL: "https://ticket.heeca.com.br/api/heeca", PRODUCT_TICKET_SECRET: secret("TICKET_PLATFORM_SECRET"),
       PRODUCT_DENTAL_APP_URL: "https://dental.heeca.com.br", PRODUCT_DENTAL_PROVISION_URL: "https://dental.heeca.com.br/api/heeca", PRODUCT_DENTAL_SECRET: secret("DENTAL_PLATFORM_SECRET"),
@@ -127,6 +134,9 @@ const APPS = [
       PRODUCT_MOVE_APP_URL: "https://move.heeca.com.br", PRODUCT_MOVE_PROVISION_URL: "https://move.heeca.com.br/api/heeca", PRODUCT_MOVE_SECRET: secret("MOVE_PLATFORM_SECRET"),
       PRODUCT_MIND_APP_URL: "https://mind.heeca.com.br", PRODUCT_MIND_PROVISION_URL: "https://mind.heeca.com.br/api/heeca", PRODUCT_MIND_SECRET: secret("MIND_PLATFORM_SECRET"),
       PRODUCT_NUTRI_APP_URL: "https://nutri.heeca.com.br", PRODUCT_NUTRI_PROVISION_URL: "https://nutri.heeca.com.br/api/heeca", PRODUCT_NUTRI_SECRET: secret("NUTRI_PLATFORM_SECRET"),
+      PRODUCT_GUARD_APP_URL: "https://guard.heeca.com.br", PRODUCT_GUARD_PROVISION_URL: "https://guard.heeca.com.br/api/heeca", PRODUCT_GUARD_SECRET: secret("GUARD_PLATFORM_SECRET"),
+      // Assist: provision/entitlement ficam na API (api.assist); o SSO e o app, no web (assist)
+      PRODUCT_ASSIST_APP_URL: "https://assist.heeca.com.br", PRODUCT_ASSIST_PROVISION_URL: "https://api.assist.heeca.com.br/api/heeca", PRODUCT_ASSIST_SECRET: secret("ASSIST_PLATFORM_SECRET"),
       PRODUCT_BRONZE_APP_URL: "https://bronze.heeca.com.br", PRODUCT_BRONZE_PROVISION_URL: "https://bronze.heeca.com.br/api/heeca", PRODUCT_BRONZE_SECRET: secret("BRONZE_PLATFORM_SECRET"),
       PRODUCT_KIDS_APP_URL: "https://kids.heeca.com.br", PRODUCT_KIDS_PROVISION_URL: "https://kids.heeca.com.br/api/heeca", PRODUCT_KIDS_SECRET: secret("KIDS_PLATFORM_SECRET"),
       PRODUCT_ATELIER_APP_URL: "https://atelier.heeca.com.br", PRODUCT_ATELIER_PROVISION_URL: "https://atelier.heeca.com.br/api/heeca", PRODUCT_ATELIER_SECRET: secret("ATELIER_PLATFORM_SECRET"),
@@ -264,8 +274,11 @@ const APPS = [
     env: (dbUrl) => ({
       NODE_ENV: "production", DATABASE_URL: dbUrl, APP_URL: "https://atelier.heeca.com.br", AUTH_TRUST_HOST: "true",
       AUTH_SECRET: secret("ATELIER_AUTH_SECRET"), MIGRATE_ON_START: "true",
-      // WhatsApp pelo Heeca Notify (o produto nunca fala com a Meta); NOTIFY_SECRET_ATELIER = mesmo nome do Notify
-      NOTIFY_URL: "https://notify.heeca.com.br", NOTIFY_PRODUCT: "atelier", NOTIFY_SECRET_ATELIER: secret("NOTIFY_SECRET_ATELIER"),
+      // /api/cron: expira orçamento vencido, marca pagamento atrasado (Scheduled Task nativa do Coolify, não o docker-compose.prod.yml do repo)
+      CRON_SECRET: secret("ATELIER_CRON_SECRET"),
+      // WhatsApp pelo Heeca Notify (o produto nunca fala com a Meta). Nome LOCAL é NOTIFY_SECRET (não
+      // NOTIFY_SECRET_ATELIER — esse sufixo só existe do lado do Notify, mesmo padrão do Mind/Nutri).
+      WHATSAPP_PROVIDER: "notify", NOTIFY_URL: "https://notify.heeca.com.br", NOTIFY_PRODUCT: "atelier", NOTIFY_SECRET: secret("NOTIFY_SECRET_ATELIER"),
       // Portal Heeca (provision/entitlement/SSO)
       HEECA_PLATFORM_SECRET: secret("ATELIER_PLATFORM_SECRET"), HEECA_PORTAL_URL: "https://heeca.com.br",
     }),
@@ -338,28 +351,68 @@ const APPS = [
     }),
   },
   {
+    // Heeca Assist (repo heeca-assessor, monorepo apps/api + apps/web, motor Finance): assistente financeiro pessoal pelo
+    // WhatsApp. DOIS apps no Coolify (api Express + web Next) e UM Postgres. Credenciais de WhatsApp/IA são PRÓPRIAS do produto
+    // (ASSIST_* em production.env) — NUNCA reaproveite o número/conta Twilio do Notify: um remetente tem um webhook só e o Assist
+    // é conversa bidirecional com IA (regra de isolamento, 19/09). O portal chama provision/entitlement na API (HEECA_PLATFORM_SECRET).
+    name: "heeca-assist-api", repo: "heeca-assessor", baseDirectory: "/", dockerfile: "/apps/api/Dockerfile", db: "heeca-assist-db", port: "3001",
+    domains: "https://api.assist.heeca.com.br",
+    env: (dbUrl) => ({
+      NODE_ENV: "production", DATABASE_URL: dbUrl, PORT: "3001", MIGRATE_ON_START: "true",
+      WEB_URL: "https://assist.heeca.com.br", PUBLIC_API_URL: "https://api.assist.heeca.com.br",
+      JWT_SECRET: secret("ASSIST_JWT_SECRET"), MFA_ENCRYPTION_KEY: secret("ASSIST_MFA_ENCRYPTION_KEY"),
+      OPENAI_API_KEY: external("ASSIST_OPENAI_API_KEY"),
+      TWILIO_ACCOUNT_SID: external("ASSIST_TWILIO_ACCOUNT_SID"), TWILIO_AUTH_TOKEN: external("ASSIST_TWILIO_AUTH_TOKEN"),
+      TWILIO_WHATSAPP_NUMBER: external("ASSIST_TWILIO_WHATSAPP_NUMBER"), TWILIO_SUMMARY_TEMPLATE_SID: external("ASSIST_TWILIO_SUMMARY_TEMPLATE_SID"),
+      // E-mail: mesma chave do Resend da plataforma (padrão dos produtos); o remetente é do próprio produto
+      RESEND_API_KEY: external("RESEND_API_KEY"), RESEND_FROM_EMAIL: "Heeca Assist <no-reply@heeca.com.br>",
+      // Portal Heeca (provision/entitlement/SSO): o MESMO valor vai ao portal como PRODUCT_ASSIST_SECRET
+      HEECA_PLATFORM_SECRET: secret("ASSIST_PLATFORM_SECRET"), HEECA_PORTAL_URL: "https://heeca.com.br",
+    }),
+  },
+  {
+    name: "heeca-assist-web", repo: "heeca-assessor", baseDirectory: "/", dockerfile: "/apps/web/Dockerfile", port: "3000",
+    domains: "https://assist.heeca.com.br",
+    env: () => ({
+      NODE_ENV: "production", API_URL: "https://api.assist.heeca.com.br", HEECA_PORTAL_URL: "https://heeca.com.br",
+    }),
+  },
+  {
+    // Heeca Guard (repo heeca-guard, 08/10/2026): gestão de jornada e escalas para segurança privada. Next standalone, Dockerfile na raiz,
+    // sem Notify/WhatsApp, cron, bucket nem Pix neste MVP (docs/DEPLOY.md do produto). AUTH_SECRET >= 32 (o boot falha sem ele).
+    name: "heeca-guard", repo: "heeca-guard", db: "heeca-guard-db", port: "3000",
+    domains: "https://guard.heeca.com.br",
+    env: (dbUrl) => ({
+      NODE_ENV: "production", DATABASE_URL: dbUrl, APP_URL: "https://guard.heeca.com.br", MIGRATE_ON_START: "true",
+      AUTH_SECRET: secret("GUARD_AUTH_SECRET"),
+      // Portal Heeca (provision/entitlement/SSO): o MESMO valor vai ao portal como PRODUCT_GUARD_SECRET
+      HEECA_PLATFORM_SECRET: secret("GUARD_PLATFORM_SECRET"), HEECA_PORTAL_URL: "https://heeca.com.br",
+    }),
+  },
+  {
     // Heeca Notify: serviço central de WhatsApp/notificações (heeca_notify). Único lugar com credenciais da Meta.
     name: "heeca-notify", repo: "heeca-notify", db: "heeca-notify-db", port: "3000",
     domains: "https://notify.heeca.com.br",
     env: (dbUrl) => ({
       NODE_ENV: "production", DATABASE_URL: dbUrl, APP_URL: "https://notify.heeca.com.br", MIGRATE_ON_START: "true",
       NOTIFY_WORKER_INPROCESS: "true", NOTIFY_MAX_PER_TENANT_MONTH: "0",
+      // WhatsApp do cliente (Embedded Signup, D11): só o portal conecta (NOTIFY_SECRET_PORTAL); NOTIFY_ENC_KEY cifra o token de cada cliente (perder = clientes reconectam);
+      // META_APP_ID/META_APP_SECRET vêm do app Heeca na Meta (cadastrar à mão em production.env depois do App Review).
+      NOTIFY_SECRET_PORTAL: secret("NOTIFY_SECRET_PORTAL"), NOTIFY_ENC_KEY: secret("NOTIFY_ENC_KEY"), META_APP_ID: external("META_APP_ID"), META_APP_SECRET: external("META_APP_SECRET"),
       // Um segredo por produto — o mesmo valor vai ao produto como NOTIFY_SECRET
       ...Object.fromEntries(["beauty", "wellness", "dental", "ink", "piercing", "mind", "kids", "nutri", "bronze", "atelier", "make", "cut", "pet", "move", "service"].map((p) => [`NOTIFY_SECRET_${p.toUpperCase()}`, secret(`NOTIFY_SECRET_${p.toUpperCase()}`)])),
-      // Meta Cloud API (WhatsApp Business) OU Twilio (BSP — achado em 24/09: a verificação de negócio
-      // do Meta for Developers travou a conta pessoal do Bruno duas vezes; a Twilio faz essa
-      // verificação por trás, sem tocar numa conta pessoal do Facebook). Meta ganha se as duas
-      // credenciais existirem (ela já está mais madura no cadastro); senão Twilio; senão console.
-      WHATSAPP_PROVIDER: external("WHATSAPP_ACCESS_TOKEN") && external("WHATSAPP_PHONE_NUMBER_ID") ? "meta" : external("TWILIO_ACCOUNT_SID") && (external("TWILIO_AUTH_TOKEN") || (external("TWILIO_API_KEY_SID") && external("TWILIO_API_KEY_SECRET"))) && external("TWILIO_WHATSAPP_FROM") ? "twilio" : "console",
-      WHATSAPP_PHONE_NUMBER_ID: external("WHATSAPP_PHONE_NUMBER_ID"), WHATSAPP_ACCESS_TOKEN: external("WHATSAPP_ACCESS_TOKEN"),
-      WHATSAPP_BUSINESS_ACCOUNT_ID: external("WHATSAPP_BUSINESS_ACCOUNT_ID"), WHATSAPP_APP_SECRET: external("WHATSAPP_APP_SECRET"),
-      WHATSAPP_VERIFY_TOKEN: secret("NOTIFY_WHATSAPP_VERIFY_TOKEN", 16),
-      // Twilio: TWILIO_CONTENT_SID_<NOME_DO_TEMPLATE> (um por template) fica fora daqui de propósito —
-      // não sabemos os nomes de antemão; o Bruno acrescenta direto em production.env conforme cadastra
-      // cada template no Content Template Builder da Twilio, e o apply publica junto sem precisar de código novo.
-      TWILIO_ACCOUNT_SID: external("TWILIO_ACCOUNT_SID"), TWILIO_AUTH_TOKEN: external("TWILIO_AUTH_TOKEN"), TWILIO_WHATSAPP_FROM: external("TWILIO_WHATSAPP_FROM"),
-      TWILIO_API_KEY_SID: external("TWILIO_API_KEY_SID"), TWILIO_API_KEY_SECRET: external("TWILIO_API_KEY_SECRET"),
-      ...Object.fromEntries(Object.keys(secrets).filter((k) => k.startsWith("TWILIO_CONTENT_SID_")).map((k) => [k, external(k)])),
+      // Canal COMPARTILHADO: desde 05/10/2026 o número Twilio é EXCLUSIVO do Heeca Assist (decisão do Bruno), então o Notify roda com
+      // WHATSAPP_PROVIDER=none e SEM credenciais Twilio: os demais produtos só enviam pelo número do próprio estabelecimento (Meta/Embedded
+      // Signup, TenantChannel). Para religar um canal compartilhado: NOTIFY_SHARED_PROVIDER=twilio|meta em production.env (e o bloco abaixo repõe as credenciais).
+      WHATSAPP_PROVIDER: NOTIFY_SHARED,
+      WHATSAPP_VERIFY_TOKEN: secret("NOTIFY_WHATSAPP_VERIFY_TOKEN", 16), WHATSAPP_APP_SECRET: external("WHATSAPP_APP_SECRET"),
+      WHATSAPP_PHONE_NUMBER_ID: external("WHATSAPP_PHONE_NUMBER_ID"), WHATSAPP_ACCESS_TOKEN: external("WHATSAPP_ACCESS_TOKEN"), WHATSAPP_BUSINESS_ACCOUNT_ID: external("WHATSAPP_BUSINESS_ACCOUNT_ID"),
+      ...(NOTIFY_SHARED === "twilio" ? {
+        // Twilio: TWILIO_CONTENT_SID_<NOME_DO_TEMPLATE> (um por template) é acrescentado à mão em production.env e publicado junto.
+        TWILIO_ACCOUNT_SID: external("TWILIO_ACCOUNT_SID"), TWILIO_AUTH_TOKEN: external("TWILIO_AUTH_TOKEN"), TWILIO_WHATSAPP_FROM: external("TWILIO_WHATSAPP_FROM"),
+        TWILIO_API_KEY_SID: external("TWILIO_API_KEY_SID"), TWILIO_API_KEY_SECRET: external("TWILIO_API_KEY_SECRET"),
+        ...Object.fromEntries(Object.keys(secrets).filter((k) => k.startsWith("TWILIO_CONTENT_SID_")).map((k) => [k, external(k)])),
+      } : {}),
     }),
   },
   {
@@ -396,10 +449,13 @@ const APPS = [
         WHATSAPP_TEMPLATE_LANGUAGE: "pt_BR",
         // E-mail pelo SDK do Resend (mesma chave dos outros apps)
         EMAIL_PROVIDER: external("RESEND_API_KEY") ? "resend" : "console", RESEND_API_KEY: external("RESEND_API_KEY"), EMAIL_FROM: `${nome} <no-reply@heeca.com.br>`,
-        // Pix do sinal: cada estabelecimento salva o próprio token do Mercado Pago no painel; sem fallback de plataforma
-        PIX_PROVIDER: "mercadopago", MERCADOPAGO_ACCESS_TOKEN: "", MERCADOPAGO_WEBHOOK_SECRET: external("MERCADOPAGO_WEBHOOK_SECRET"),
+        // Pix do sinal (decisão do Bruno, 23/10): Asaas é o único meio de pagamento; cada estabelecimento salva a chave da PRÓPRIA
+        // conta Asaas no painel (cifrada) — sem Mercado Pago e sem fallback de plataforma. O ambiente sai da mesma regra do portal.
+        ASAAS_ENV,
         // Portal Heeca (provision/entitlement/SSO) — segredo próprio por marca
         HEECA_PLATFORM_SECRET: secret(`${K}_PLATFORM_SECRET`), HEECA_PORTAL_URL: "https://heeca.com.br",
+        // Upload real de imagem (foto do profissional, serviço, portfólio, logo, espaço): lib/storage exige STORAGE_PROVIDER=s3 em produção.
+        ...s3PublicEnv(marca),
       }),
     };
   }),
@@ -531,7 +587,7 @@ if (cmd === "apply") {
         method: "POST",
         body: JSON.stringify({
           project_uuid: proj.uuid, server_uuid: srv.uuid, environment_name: ENV_NAME, github_app_uuid: GITHUB_APP_UUID,
-          git_repository: `${OWNER}/${a.repo}`, git_branch: "main", build_pack: "dockerfile", dockerfile_location: "/Dockerfile", ports_exposes: a.port,
+          git_repository: `${OWNER}/${a.repo}`, git_branch: "main", build_pack: "dockerfile", dockerfile_location: a.dockerfile ?? "/Dockerfile", ...(a.baseDirectory ? { base_directory: a.baseDirectory } : {}), ports_exposes: a.port,
           name: a.name, description: `Heeca - ${a.name}`, domains: a.domains, ...HEALTH, instant_deploy: false,
         }),
       });
@@ -544,7 +600,7 @@ if (cmd === "apply") {
     // Domínio e healthcheck reaplicados sempre (idempotente): trocar o subdomínio aqui basta, o Traefik emite o certificado novo no próximo deploy.
     const domains = (app.fqdn ?? "") !== a.domains ? { domains: a.domains } : {};
     if (domains.domains) console.log(`  ~ domínio ${app.fqdn ?? "-"} → ${a.domains}`);
-    await api(`/applications/${app.uuid}`, { method: "PATCH", body: JSON.stringify({ ...HEALTH, ...domains }) });
+    await api(`/applications/${app.uuid}`, { method: "PATCH", body: JSON.stringify({ ...HEALTH, ...domains, ...(a.baseDirectory ? { base_directory: a.baseDirectory } : {}), ...(a.dockerfile ? { dockerfile_location: a.dockerfile } : {}) }) });
     const dbUrl = `${dbUrls[a.db]}?schema=public`;
     const env = a.env(dbUrl);
     await api(`/applications/${app.uuid}/envs/bulk`, { method: "PATCH", body: JSON.stringify({ data: Object.entries(env).map(([key, value]) => ({ key, value, is_preview: false, is_build_time: false, is_literal: true })) }) });

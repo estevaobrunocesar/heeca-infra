@@ -34,6 +34,8 @@ export const REPOS = [
   { dir: "heeca_nutri", name: "heeca-nutri", description: "Heeca Nutri: agenda, plano alimentar, biblioteca de alimentos e receitas, antropometria e portal do paciente para nutricionistas" },
   { dir: "heeca_bronze", name: "heeca-bronze", description: "Heeca Bronze: gestão e agendamento para studios de bronzeamento (métodos, registro de sessão, produtos e estoque, pacotes, gift cards)" },
   { dir: "heeca_skin", name: "heeca-skin", description: "Heeca Skin: gestão e agendamento para esteticistas e studios de estética (avaliação, protocolos, planos e pacotes de sessões, WhatsApp, retorno)" },
+  { dir: "heeca_guard", name: "heeca-guard", description: "Heeca Guard: gestão de jornada e escalas para segurança privada (ponto pelo celular, escalas, fechamento mensal)" },
+  { dir: "../Meu Assessor", name: "heeca-assessor", description: "Heeca Assist: assessor financeiro pessoal pelo WhatsApp com IA (monorepo api + web)" },
   { dir: "brand", name: "heeca-brand", description: "Kit de marca Heeca (gerador do símbolo, logos, favicons)" },
 ];
 
